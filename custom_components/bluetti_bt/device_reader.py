@@ -205,3 +205,122 @@ class DeviceReader(BaseDeviceReader):
             return None
 
         return parsed_data
+
+    async def write(self, field: str, value: Any) -> bool:
+        command = self.bluetti_device.build_write_command(field, value)
+
+        if command is None:
+            self.logger.error("Field is not writeable: %s", field)
+            return False
+
+        write_succeeded = False
+        write_failed = False
+
+        async with self.polling_lock:
+            try:
+                async with async_timeout.timeout(self.config.timeout):
+                    if self.ble_client:
+                        self.device = None
+                    elif self.ble_device_callback:
+                        self.device = self.ble_device_callback()
+                    else:
+                        self.device = await BleakScanner.find_device_by_address(
+                            self.mac,
+                            timeout=5,
+                        )
+
+                    if not self.ble_client and self.device is None:
+                        self.logger.error("Device not found")
+                        write_failed = True
+                    else:
+                        if self.ble_client:
+                            self.client = self.ble_client
+                        else:
+                            self.client = await establish_connection(
+                                BleakClientWithServiceCache,
+                                self.device,
+                                self.device.name or "Unknown Device",
+                                max_attempts=10,
+                                ble_device_callback=self.ble_device_callback,
+                            )
+
+                        await self.client.start_notify(
+                            NOTIFY_UUID,
+                            self._notification_handler,
+                        )
+                        self.has_notifier = True
+
+                        while (
+                            self.config.use_encryption
+                            and not self.encryption.is_ready_for_commands
+                        ):
+                            await asyncio.sleep(1)
+
+                        response = await self._async_send_command(command)
+                        if command.is_exception_response(response):
+                            self.logger.error(
+                                "Device rejected write to %s",
+                                field,
+                            )
+                        elif not command.is_valid_response(response):
+                            self.logger.error(
+                                "Invalid write response for %s",
+                                field,
+                            )
+                        elif (
+                            len(response) != command.response_size()
+                            or response != bytes(command)
+                        ):
+                            self.logger.error(
+                                "Write acknowledgement did not match %s",
+                                field,
+                            )
+                        else:
+                            write_succeeded = True
+            except TimeoutError:
+                self.logger.warning("Write timed out")
+                write_failed = True
+            except BleakError as err:
+                self.logger.warning("Bleak write error: %s", err)
+                write_failed = True
+            except Exception as err:
+                self.logger.warning("Unknown write error: %s", err)
+                write_failed = True
+            finally:
+                if self.has_notifier and self.client:
+                    try:
+                        await self.client.stop_notify(NOTIFY_UUID)
+                    except Exception as err:
+                        self.logger.debug(
+                            "Failed to stop notifier: %s",
+                            err,
+                        )
+                    self.has_notifier = False
+
+                if self.client:
+                    try:
+                        await self.client.disconnect()
+                    except Exception as err:
+                        self.logger.debug(
+                            "Failed to disconnect from device: %s",
+                            err,
+                        )
+                    self.client = None
+
+                self.encryption.reset()
+                self.encrypted_buffer.clear()
+
+                if (
+                    write_failed
+                    and not self.ble_client
+                    and close_stale_connections_by_address is not None
+                ):
+                    try:
+                        await close_stale_connections_by_address(self.mac)
+                    except Exception as err:
+                        self.logger.debug(
+                            "Failed to close stale connections: %s",
+                            err,
+                        )
+
+        return write_succeeded

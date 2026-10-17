@@ -3,8 +3,6 @@
 from __future__ import annotations
 import asyncio
 import logging
-import async_timeout
-from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
 from homeassistant.components import bluetooth
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
@@ -19,11 +17,11 @@ from homeassistant.helpers.update_coordinator import (
 from bluetti_bt_lib import (
     build_device,
     BluettiDevice,
-    DeviceWriter,
     DeviceField,
     FieldName,
 )
 
+from .device_reader import DeviceReader, DeviceReaderConfig
 from .types import FullDeviceConfig, get_category
 from . import device_info as dev_info, get_unique_id
 from .const import DATA_COORDINATOR, DATA_LOCK, DOMAIN
@@ -43,10 +41,6 @@ async def async_setup_entry(
     logger = logging.getLogger(
         f"{__name__}.{mac_loggable(config.address).replace(':', '_')}"
     )
-
-    if config.use_encryption is True:
-        logger.info("Controls are disabled on encrypted devices")
-        return None
 
     if config is None or not isinstance(coordinator, PollingCoordinator):
         logger.error("No coordinator found")
@@ -73,6 +67,7 @@ async def async_setup_entry(
                 device_info,
                 field,
                 lock,
+                config.use_encryption,
                 category=category,
                 logger=logger,
             )
@@ -93,6 +88,7 @@ class BluettiSwitch(CoordinatorEntity, SwitchEntity):
         device_info: DeviceInfo,
         field: DeviceField,
         lock: asyncio.Lock,
+        use_encryption: bool,
         category: EntityCategory | None = None,
         logger: logging.Logger = logging.getLogger(),
     ):
@@ -109,6 +105,7 @@ class BluettiSwitch(CoordinatorEntity, SwitchEntity):
         self._response_key = field.name
         self._unavailable_counter = 5
         self._lock = lock
+        self._use_encryption = use_encryption
 
         self._attr_has_entity_name = True
         self._attr_device_info = device_info
@@ -206,33 +203,33 @@ class BluettiSwitch(CoordinatorEntity, SwitchEntity):
                 self._address,
                 connectable=True,
             )
-            device = ble_device_callback()
-
-            if device is None:
-                return
-
-            client = await establish_connection(
-                BleakClientWithServiceCache,
-                device,
-                device.name or "Unknown Device",
-                max_attempts=10,
+            writer = DeviceReader(
+                self._address,
+                self._bluetti_device,
+                self._hass.loop.create_future,
+                DeviceReaderConfig(
+                    timeout=30,
+                    use_encryption=self._use_encryption,
+                ),
+                self._lock,
                 ble_device_callback=ble_device_callback,
             )
 
-            if not client.is_connected:
-                return
+            if not await writer.write(self._field.name, state):
+                self._logger.error(
+                    "Failed to write %s on %s",
+                    self._response_key,
+                    mac_loggable(self._address),
+                )
+                return None
 
-            writer = DeviceWriter(client, self._bluetti_device, lock=self._lock)
-
-            async with async_timeout.timeout(15):
-                # Send command
-                await writer.write(self._field.name, state)
-
-                # Wait until device has changed value, otherwise reading register might reset it
-                await asyncio.sleep(5)
-
-        except TimeoutError:
-            self._logger.error("Timed out for device %s", mac_loggable(self._address))
+            await asyncio.sleep(5)
+        except Exception as err:
+            self._logger.error(
+                "Failed to write to %s: %s",
+                mac_loggable(self._address),
+                err,
+            )
             return None
 
         await self.coordinator.async_request_refresh()

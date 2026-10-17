@@ -8,6 +8,7 @@ The fork includes:
 
 - EL300 device registration and validated register mappings
 - encrypted BLE polling support
+- encrypted BLE writes for AC/DC outputs and supported settings
 - Home Assistant Bluetooth adapter and ESPHome Bluetooth proxy routing
 - cleanup of stale Bluetooth connections after failed polls
 - encryption state reset after failed handshakes
