@@ -7,8 +7,9 @@ import logging
 from homeassistant.components import bluetooth
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
-from bluetti_bt_lib import build_device, DeviceReader, DeviceReaderConfig
+from bluetti_bt_lib import build_device
 
+from .device_reader import DeviceReader, DeviceReaderConfig
 from .utils import mac_loggable
 from .types import FullDeviceConfig
 
@@ -52,6 +53,11 @@ class PollingCoordinator(DataUpdateCoordinator):
                 config.use_encryption,
             ),
             lock,
+            ble_device_callback=lambda: bluetooth.async_ble_device_from_address(
+                self.hass,
+                config.address,
+                connectable=True,
+            ),
         )
 
     async def _async_update_data(self):

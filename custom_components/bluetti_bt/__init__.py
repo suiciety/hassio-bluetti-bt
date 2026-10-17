@@ -20,6 +20,11 @@ from .const import (
     MANUFACTURER,
 )
 from .types import FullDeviceConfig
+
+from .el300_support import register_el300
+
+register_el300()
+
 from .coordinator import PollingCoordinator
 
 PLATFORMS: List[Platform] = [

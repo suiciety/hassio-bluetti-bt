@@ -4,8 +4,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import async_timeout
-from bleak import BleakScanner
 from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
+from homeassistant.components import bluetooth
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -66,6 +66,7 @@ async def async_setup_entry(
 
         switches_to_add.append(
             BluettiSwitch(
+                hass,
                 bluetti_device,
                 config.address,
                 coordinator,
@@ -85,6 +86,7 @@ class BluettiSwitch(CoordinatorEntity, SwitchEntity):
 
     def __init__(
         self,
+        hass: HomeAssistant,
         bluetti_device: BluettiDevice,
         address: str,
         coordinator: PollingCoordinator,
@@ -98,6 +100,7 @@ class BluettiSwitch(CoordinatorEntity, SwitchEntity):
         super().__init__(coordinator)
         self.coordinator = coordinator
         self._logger = logger
+        self._hass = hass
 
         e_name = f"{device_info.get('name')} {field.name}"
         self._bluetti_device = bluetti_device
@@ -198,7 +201,12 @@ class BluettiSwitch(CoordinatorEntity, SwitchEntity):
         """Write to device."""
 
         try:
-            device = await BleakScanner.find_device_by_address(self._address, timeout=5)
+            ble_device_callback = lambda: bluetooth.async_ble_device_from_address(
+                self._hass,
+                self._address,
+                connectable=True,
+            )
+            device = ble_device_callback()
 
             if device is None:
                 return
@@ -208,6 +216,7 @@ class BluettiSwitch(CoordinatorEntity, SwitchEntity):
                 device,
                 device.name or "Unknown Device",
                 max_attempts=10,
+                ble_device_callback=ble_device_callback,
             )
 
             if not client.is_connected:

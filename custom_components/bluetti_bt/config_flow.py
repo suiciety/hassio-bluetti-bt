@@ -6,13 +6,14 @@ import logging
 from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth import (
     BluetoothServiceInfoBleak,
 )
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.data_entry_flow import FlowResult
-from bluetti_bt_lib import recognize_device
 
+from .device_recognizer import recognize_device
 from .types import InitialDeviceConfig, ManufacturerData, OptionalDeviceConfig
 from .const import DOMAIN
 
@@ -36,7 +37,13 @@ class BluettiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # Get device type
         recognized = await recognize_device(
-            discovery_info.address, self.hass.loop.create_future
+            discovery_info.address,
+            self.hass.loop.create_future,
+            ble_device_callback=lambda: bluetooth.async_ble_device_from_address(
+                self.hass,
+                discovery_info.address,
+                connectable=True,
+            ),
         )
 
         if recognized is None:

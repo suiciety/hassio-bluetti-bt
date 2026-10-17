@@ -1,3 +1,34 @@
+# Bluetti BT - EL300
+
+This fork of
+[Patrick762/hassio-bluetti-bt](https://github.com/Patrick762/hassio-bluetti-bt)
+adds persistent support for the Bluetti Elite 300 (EL300).
+
+The fork includes:
+
+- EL300 device registration and validated register mappings
+- encrypted BLE polling support
+- Home Assistant Bluetooth adapter and ESPHome Bluetooth proxy routing
+- cleanup of stale Bluetooth connections after failed polls
+- encryption state reset after failed handshakes
+
+## Installation with HACS
+
+1. Open HACS.
+2. Select **Integrations**.
+3. Open the menu and select **Custom repositories**.
+4. Add `https://github.com/suiciety/hassio-bluetti-bt` as an
+   **Integration** repository.
+5. Install **Bluetti BT - EL300** and restart Home Assistant.
+
+Remove the upstream Bluetti BT custom repository first if HACS reports a
+duplicate integration. Existing `bluetti_bt` devices and entity IDs are
+preserved because this fork uses the same integration domain.
+
+## Upstream project
+
+The original project documentation follows.
+
 # hassio-bluetti-bt
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/integration)
 [![Validate with hassfest](https://github.com/Patrick762/hassio-bluetti-bt/actions/workflows/hassfest_validation.yml/badge.svg)](https://github.com/Patrick762/hassio-bluetti-bt/actions/workflows/hassfest_validation.yml)
