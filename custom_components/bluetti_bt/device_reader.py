@@ -21,6 +21,8 @@ try:
 except ImportError:
     close_stale_connections_by_address = None
 
+CONNECT_ATTEMPTS_PER_OPERATION = 1
+
 
 class DeviceReader(BaseDeviceReader):
     def __init__(
@@ -91,7 +93,7 @@ class DeviceReader(BaseDeviceReader):
                                 BleakClientWithServiceCache,
                                 self.device,
                                 self.device.name or "Unknown Device",
-                                max_attempts=10,
+                                max_attempts=CONNECT_ATTEMPTS_PER_OPERATION,
                                 ble_device_callback=self.ble_device_callback,
                             )
 
@@ -240,7 +242,7 @@ class DeviceReader(BaseDeviceReader):
                                 BleakClientWithServiceCache,
                                 self.device,
                                 self.device.name or "Unknown Device",
-                                max_attempts=10,
+                                max_attempts=CONNECT_ATTEMPTS_PER_OPERATION,
                                 ble_device_callback=self.ble_device_callback,
                             )
 

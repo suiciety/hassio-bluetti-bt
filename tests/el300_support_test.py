@@ -1,16 +1,19 @@
 import asyncio
 import inspect
 import sys
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 import unittest
+from unittest.mock import AsyncMock, patch
 
 sys.modules.setdefault(
     "homeassistant.components.bluetooth",
     ModuleType("homeassistant.components.bluetooth"),
 )
 
-import custom_components.bluetti_bt  # noqa: F401
+from bleak.exc import BleakError
 from bluetti_bt_lib import FieldName, build_device
+
+import custom_components.bluetti_bt  # noqa: F401
 
 from custom_components.bluetti_bt.device_reader import DeviceReader, DeviceReaderConfig
 from bluetti_bt_lib.registers import WriteableRegister
@@ -64,6 +67,41 @@ class TestEL300Support(unittest.TestCase):
         parameters = inspect.signature(DeviceReader).parameters
 
         self.assertIn("ble_device_callback", parameters)
+
+
+class TestConnectionRetries(unittest.IsolatedAsyncioTestCase):
+    def build_reader(self):
+        return DeviceReader(
+            "00:11:22:33:44:55",
+            build_device("EL3002551110023321"),
+            asyncio.get_running_loop().create_future,
+            DeviceReaderConfig(timeout=5, use_encryption=True),
+            ble_device_callback=lambda: SimpleNamespace(name="EL300"),
+        )
+
+    async def test_read_uses_single_connector_attempt(self):
+        reader = self.build_reader()
+
+        with patch(
+            "custom_components.bluetti_bt.device_reader.establish_connection",
+            new=AsyncMock(side_effect=BleakError("connection failed")),
+        ) as establish:
+            result = await reader.read()
+
+        self.assertIsNone(result)
+        self.assertEqual(establish.await_args.kwargs["max_attempts"], 1)
+
+    async def test_write_uses_single_connector_attempt(self):
+        reader = self.build_reader()
+
+        with patch(
+            "custom_components.bluetti_bt.device_reader.establish_connection",
+            new=AsyncMock(side_effect=BleakError("connection failed")),
+        ) as establish:
+            result = await reader.write(FieldName.CTRL_AC.value, True)
+
+        self.assertFalse(result)
+        self.assertEqual(establish.await_args.kwargs["max_attempts"], 1)
 
 
 class TestEncryptedWrites(unittest.IsolatedAsyncioTestCase):
